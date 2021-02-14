@@ -198,136 +198,6 @@ class LoadImages:  # for inference
         return self.nf  # number of files
 
 
-class LoadWebcam:  # for inference
-    def __init__(self, pipe='0', img_size=640):
-        self.img_size = img_size
-
-        if pipe.isnumeric():
-            pipe = eval(pipe)  # local camera
-        # pipe = 'rtsp://192.168.1.64/1'  # IP camera
-        # pipe = 'rtsp://username:password@192.168.1.64/1'  # IP camera with login
-        # pipe = 'http://wmccpinetop.axiscam.net/mjpg/video.mjpg'  # IP golf camera
-
-        self.pipe = pipe
-        self.cap = cv2.VideoCapture(pipe)  # video capture object
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # set buffer size
-
-    def __iter__(self):
-        self.count = -1
-        return self
-
-    def __next__(self):
-        self.count += 1
-        if cv2.waitKey(1) == ord('q'):  # q to quit
-            self.cap.release()
-            cv2.destroyAllWindows()
-            raise StopIteration
-
-        # Read frame
-        if self.pipe == 0:  # local camera
-            ret_val, img0 = self.cap.read()
-            img0 = cv2.flip(img0, 1)  # flip left-right
-        else:  # IP camera
-            n = 0
-            while True:
-                n += 1
-                self.cap.grab()
-                if n % 30 == 0:  # skip frames
-                    ret_val, img0 = self.cap.retrieve()
-                    if ret_val:
-                        break
-
-        # Print
-        assert ret_val, f'Camera Error {self.pipe}'
-        img_path = 'webcam.jpg'
-        print(f'webcam {self.count}: ', end='')
-
-        # Padded resize
-        img = letterbox(img0, new_shape=self.img_size)[0]
-
-        # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img = np.ascontiguousarray(img)
-
-        return img_path, img, img0, None
-
-    def __len__(self):
-        return 0
-
-
-class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640):
-        self.mode = 'stream'
-        self.img_size = img_size
-
-        if os.path.isfile(sources):
-            with open(sources, 'r') as f:
-                sources = [x.strip() for x in f.read().strip().splitlines() if len(x.strip())]
-        else:
-            sources = [sources]
-
-        n = len(sources)
-        self.imgs = [None] * n
-        self.sources = [clean_str(x) for x in sources]  # clean source names for later
-        for i, s in enumerate(sources):
-            # Start the thread to read frames from the video stream
-            print(f'{i + 1}/{n}: {s}... ', end='')
-            cap = cv2.VideoCapture(eval(s) if s.isnumeric() else s)
-            assert cap.isOpened(), f'Failed to open {s}'
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS) % 100
-            _, self.imgs[i] = cap.read()  # guarantee first frame
-            thread = Thread(target=self.update, args=([i, cap]), daemon=True)
-            print(f' success ({w}x{h} at {fps:.2f} FPS).')
-            thread.start()
-        print('')  # newline
-
-        # check for common shapes
-        s = np.stack([letterbox(x, new_shape=self.img_size)[0].shape for x in self.imgs], 0)  # inference shapes
-        self.rect = np.unique(s, axis=0).shape[0] == 1  # rect inference if all shapes equal
-        if not self.rect:
-            print('WARNING: Different stream shapes detected. For optimal performance supply similarly-shaped streams.')
-
-    def update(self, index, cap):
-        # Read next stream frame in a daemon thread
-        n = 0
-        while cap.isOpened():
-            n += 1
-            # _, self.imgs[index] = cap.read()
-            cap.grab()
-            if n == 4:  # read every 4th frame
-                _, self.imgs[index] = cap.retrieve()
-                n = 0
-            time.sleep(0.01)  # wait time
-
-    def __iter__(self):
-        self.count = -1
-        return self
-
-    def __next__(self):
-        self.count += 1
-        img0 = self.imgs.copy()
-        if cv2.waitKey(1) == ord('q'):  # q to quit
-            cv2.destroyAllWindows()
-            raise StopIteration
-
-        # Letterbox
-        img = [letterbox(x, new_shape=self.img_size, auto=self.rect)[0] for x in img0]
-
-        # Stack
-        img = np.stack(img, 0)
-
-        # Convert
-        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB, to bsx3x416x416
-        img = np.ascontiguousarray(img)
-
-        return self.sources, img, img0, None
-
-    def __len__(self):
-        return 0  # 1E12 frames = 32 streams at 30 FPS for 30 years
-
-
 def img2label_paths(img_paths):
     # Define label paths as a function of image paths
     sa, sb = os.sep + 'images' + os.sep, os.sep + 'labels' + os.sep  # /images/, /labels/ substrings
@@ -613,6 +483,8 @@ def load_image(self, index):
     if img is None:  # not cached
         path = self.img_files[index]
         img = cv2.imread(path)  # BGR
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        img = cv2.filter2D(img, -1, kernel)
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # resize image to img_size
