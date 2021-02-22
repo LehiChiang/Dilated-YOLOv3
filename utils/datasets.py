@@ -1,5 +1,5 @@
 # Dataset utils and dataloaders
-
+import copy
 import glob
 import logging
 import math
@@ -407,7 +407,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                                                  perspective=hyp['perspective'])
 
             # Augment colorspace
-            augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
+            img = augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
             # Apply cutouts
             # if random.random() < 0.9:
@@ -483,31 +483,37 @@ def load_image(self, index):
     if img is None:  # not cached
         path = self.img_files[index]
         img = cv2.imread(path)  # BGR
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-        img = cv2.filter2D(img, -1, kernel)
+        original_img = copy.deepcopy(img)
+        kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
+        filter_img = cv2.filter2D(img, -1, kernel)
         assert img is not None, 'Image Not Found ' + path
-        h0, w0 = img.shape[:2]  # orig hw
-        r = self.img_size / max(h0, w0)  # resize image to img_size
-        if r != 1:  # always resize down, only resize up if training with augmentation
-            interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
-            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        h0, w0 = img.shape[:2]
+        r = 640 / max(h0, w0)
+        if r != 1:
+            interp = cv2.INTER_AREA if r < 1 else cv2.INTER_LINEAR
+            original_img = cv2.resize(original_img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+            filter_img = cv2.resize(filter_img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        img = np.concatenate([original_img, filter_img], axis=-1)
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
 
 
 def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
+    ori_img = img[:, :, 0:3]
+    filter_img = img[:, :, 3:6]
     r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
-    hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
-    dtype = img.dtype  # uint8
-
+    hue, sat, val = cv2.split(cv2.cvtColor(ori_img, cv2.COLOR_BGR2HSV))
+    dtype = ori_img.dtype  # uint8
     x = np.arange(0, 256, dtype=np.int16)
     lut_hue = ((x * r[0]) % 180).astype(dtype)
     lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
     lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
-
     img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
-    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)  # no return needed
+    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=ori_img)  # no return needed
+    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=filter_img)  # no return needed
+    img = np.concatenate([ori_img, filter_img], axis=-1)
+    return img
 
     # Histogram equalization
     # if random.random() < 0.2:
@@ -690,10 +696,14 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
     dh /= 2
 
     if shape[::-1] != new_unpad:  # resize
-        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        original_img = cv2.resize(img[:, :, 0:3], new_unpad, interpolation=cv2.INTER_LINEAR)
+        filter_img = cv2.resize(img[:, :, 3:6], new_unpad, interpolation=cv2.INTER_LINEAR)
+        img = np.concatenate([original_img, filter_img], axis=-1)
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    original_img_border = cv2.copyMakeBorder(img[:, :, 0:3], top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    filter_img_border = cv2.copyMakeBorder(img[:, :, 3:6], top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    img = np.concatenate([original_img_border, filter_img_border], axis=-1)
     return img, ratio, (dw, dh)
 
 
