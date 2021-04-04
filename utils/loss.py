@@ -92,7 +92,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     h = model.hyp  # hyperparameters
 
     # Define criteria
-    BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))  # weight=model.class_weights)
+    BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.5, 1, 1], device=device))  # weight=model.class_weights)
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
 
     # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
@@ -118,7 +118,18 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             pwh = (ps[:, 2:4].sigmoid() * 2) ** 2 * anchors[i]
             pbox = torch.cat((pxy, pwh), 1)  # predicted box
             iou = bbox_iou(pbox.T, tbox[i], x1y1x2y2=False, EIoU=True)  # iou(prediction, target)
-            lbox += (1.0 - iou).mean()  # iou loss
+            # 以下是我的修改
+            t = torch.full_like(ps[:, 5:], cn, device=device)  # targets
+            t[range(n), tcls[i]] = cp
+            weight_lst = torch.ones_like(iou)
+            for idx, cls in enumerate(t):
+                if cls[0] == 1:
+                    weight_lst[idx] = 1.5
+                else:
+                    weight_lst[idx] = 1
+            lbox += (weight_lst * (1.0 - iou)).mean()  # iou loss
+            # 修改结束
+            # lbox += (1.0 - iou).mean()  # iou loss
 
             # Objectness
             tobj[b, a, gj, gi] = (1.0 - model.gr) + model.gr * iou.detach().clamp(0).type(tobj.dtype)  # iou ratio
