@@ -8,7 +8,7 @@ import torch.backends.cudnn as cudnn
 from numpy import random
 
 from models.experimental import attempt_load
-from utils.datasets import LoadStreams, LoadImages
+from utils.datasets import LoadImages
 from utils.general import check_img_size, check_requirements, non_max_suppression, apply_classifier, scale_coords, \
     xyxy2xywh, strip_optimizer, set_logging, increment_path
 from utils.plots import plot_one_box

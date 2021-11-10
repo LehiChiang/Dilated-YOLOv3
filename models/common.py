@@ -1,16 +1,44 @@
 # This file contains modules common to various models
 
 import math
+from functools import partial
 
 import numpy as np
 import requests
 import torch
 import torch.nn as nn
 from PIL import Image, ImageDraw
+from torch.nn import BatchNorm2d, SyncBatchNorm, GroupNorm
+from torchvision.ops.misc import FrozenBatchNorm2d
 
 from utils.datasets import letterbox
 from utils.general import non_max_suppression, make_divisible, scale_coords, xyxy2xywh
 from utils.plots import color_list
+
+
+def get_norm(norm, out_channels, **kwargs):
+    if norm is None:
+        return None
+    if isinstance(norm, str):
+        if len(norm) == 0:
+            return None
+        norm = {
+            "BN": BatchNorm2d,
+            "FrozenBN": FrozenBatchNorm2d,
+            "GN": lambda channels: GroupNorm(32, channels),
+            "SyncBN": SyncBatchNorm,
+        }[norm]
+    return norm(out_channels, **kwargs)
+
+
+def get_activation(activation):
+    act = {
+        "ReLU": nn.ReLU,
+        "LeakyReLU": nn.LeakyReLU,
+    }[activation]
+    if activation == "LeakyReLU":
+        act = partial(act, negative_slope=0.1)
+    return act(inplace=True)
 
 
 def autopad(k, p=None):  # kernel, padding
@@ -301,3 +329,128 @@ class Classify(nn.Module):
     def forward(self, x):
         z = torch.cat([self.aap(y) for y in (x if isinstance(x, list) else [x])], 1)  # cat if list
         return self.flat(self.conv(z))  # flatten to x(b,c2)
+
+
+class DilatedBottleneck(nn.Module):
+
+    def __init__(self,
+                 in_channels: int = 512,
+                 mid_channels: int = 128,
+                 dilation: int = 1,
+                 norm_type: str = 'BN',
+                 act_type: str = 'ReLU'):
+        super(DilatedBottleneck, self).__init__()
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=1, padding=0),
+            get_norm(norm_type, mid_channels),
+            get_activation(act_type)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(mid_channels, mid_channels,
+                      kernel_size=3, padding=dilation, dilation=dilation),
+            get_norm(norm_type, mid_channels),
+            get_activation(act_type)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(mid_channels, in_channels, kernel_size=1, padding=0),
+            get_norm(norm_type, in_channels),
+            get_activation(act_type)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = out + identity
+        return out
+
+
+class DilatedEncoder(nn.Module):
+    """
+    Dilated Encoder From YOLOF.
+
+    This module contains two types of components:
+        - the original FPN lateral convolution layer and fpn convolution layer,
+          which are 1x1 conv + 3x3 conv
+        - the dilated residual block
+    """
+
+    def __init__(self, in_channels, encoder_channels, mid_channels, num_residual_blocks, block_dilations):
+        super(DilatedEncoder, self).__init__()
+        # fmt: off
+        self.backbone_level = "res5"
+        self.in_channels = in_channels
+        self.encoder_channels = encoder_channels
+        self.block_mid_channels = mid_channels
+        self.num_residual_blocks = num_residual_blocks
+        self.block_dilations = block_dilations
+        self.norm_type = "BN"
+        self.act_type = "ReLU"
+
+        assert len(self.block_dilations) == self.num_residual_blocks
+
+        # init
+        self._init_layers()
+        self._init_weight()
+
+    def _init_layers(self):
+        self.lateral_conv = nn.Conv2d(self.in_channels,
+                                      self.encoder_channels,
+                                      kernel_size=1)
+        self.lateral_norm = get_norm(self.norm_type, self.encoder_channels)
+        self.fpn_conv = nn.Conv2d(self.encoder_channels,
+                                  self.encoder_channels,
+                                  kernel_size=3,
+                                  padding=1)
+        self.fpn_norm = get_norm(self.norm_type, self.encoder_channels)
+        encoder_blocks = []
+        for i in range(self.num_residual_blocks):
+            dilation = self.block_dilations[i]
+            encoder_blocks.append(
+                DilatedBottleneck(
+                    self.encoder_channels,
+                    self.block_mid_channels,
+                    dilation=dilation,
+                    norm_type=self.norm_type,
+                    act_type=self.act_type
+                )
+            )
+        self.dilated_encoder_blocks = nn.Sequential(*encoder_blocks)
+
+    def _init_weight(self):
+        c2_xavier_fill(self.lateral_conv)
+        c2_xavier_fill(self.fpn_conv)
+        for m in [self.lateral_norm, self.fpn_norm]:
+            nn.init.constant_(m.weight, 1)
+            nn.init.constant_(m.bias, 0)
+        for m in self.dilated_encoder_blocks.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight, mean=0, std=0.01)
+                if hasattr(m, 'bias') and m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+            if isinstance(m, (nn.GroupNorm, nn.BatchNorm2d, nn.SyncBatchNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, feature: torch.Tensor) -> torch.Tensor:
+        out = self.lateral_norm(self.lateral_conv(feature))
+        out = self.fpn_norm(self.fpn_conv(out))
+        return self.dilated_encoder_blocks(out)
+
+
+def c2_xavier_fill(module: nn.Module) -> None:
+    """
+    Initialize `module.weight` using the "XavierFill" implemented in Caffe2.
+    Also initializes `module.bias` to 0.
+
+    Args:
+        module (torch.nn.Module): module to initialize.
+    """
+    # Caffe2 implementation of XavierFill in fact
+    # corresponds to kaiming_uniform_ in PyTorch
+    nn.init.kaiming_uniform_(module.weight, a=1)
+    if module.bias is not None:
+        nn.init.constant_(module.bias, 0)

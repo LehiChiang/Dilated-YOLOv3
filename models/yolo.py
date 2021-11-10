@@ -4,6 +4,8 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+import yaml
+
 sys.path.append('./')  # to run '$ python *.py' files in subdirectories
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ class Detect(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, cfg='yolov3.yaml', ch=6, nc=None):  # model, input channels, number of classes
+    def __init__(self, cfg='yolov3.yaml', ch=3, nc=None):  # model, input channels, number of classes
         super(Model, self).__init__()
         if isinstance(cfg, dict):
             self.yaml = cfg  # model dict
@@ -75,12 +77,8 @@ class Model(nn.Module):
 
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
-        if nc and nc != self.yaml['nc']:
-            logger.info('Overriding model.yaml nc=%g with nc=%g' % (self.yaml['nc'], nc))
-            self.yaml['nc'] = nc  # override yaml value
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
-        # print([x.shape for x in self.forward(torch.zeros(1, ch, 64, 64))])
 
         # Build strides, anchors
         m = self.model[-1]  # Detect()
@@ -98,27 +96,7 @@ class Model(nn.Module):
         self.info()
         logger.info('')
 
-    def forward(self, x, augment=False, profile=False):
-        if augment:
-            img_size = x.shape[-2:]  # height, width
-            s = [1, 0.83, 0.67]  # scales
-            f = [None, 3, None]  # flips (2-ud, 3-lr)
-            y = []  # outputs
-            for si, fi in zip(s, f):
-                xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-                yi = self.forward_once(xi)[0]  # forward
-                # cv2.imwrite('img%g.jpg' % s, 255 * xi[0].numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
-                yi[..., :4] /= si  # de-scale
-                if fi == 2:
-                    yi[..., 1] = img_size[0] - yi[..., 1]  # de-flip ud
-                elif fi == 3:
-                    yi[..., 0] = img_size[1] - yi[..., 0]  # de-flip lr
-                y.append(yi)
-            return torch.cat(y, 1), None  # augmented inference, train
-        else:
-            return self.forward_once(x, profile)  # single-scale inference, train
-
-    def forward_once(self, x, profile=False):
+    def forward(self, x, profile=False):
         y, dt = [], []  # outputs
         for m in self.model:
             if m.f != -1:  # if not from previous layer
@@ -197,7 +175,7 @@ class Model(nn.Module):
 def parse_model(d, ch):  # model_dict, input_channels(3)
     logger.info('\n%3s%18s%3s%10s  %-40s%-30s' % ('', 'from', 'n', 'params', 'module', 'arguments'))
     anchors, nc, gd, gw = d['anchors'], d['nc'], d['depth_multiple'], d['width_multiple']
-    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors na = 3
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
@@ -210,32 +188,14 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 pass
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in [Conv, Bottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP, C3]:
+        if m in [Conv, Bottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP, C3, DilatedEncoder]:
             c1, c2 = ch[f], args[0]
-
-            # Normal
-            # if i > 0 and args[0] != no:  # channel expansion factor
-            #     ex = 1.75  # exponential (default 2.0)
-            #     e = math.log(c2 / ch[1]) / math.log(2)
-            #     c2 = int(ch[1] * ex ** e)
-            # if m != Focus:
-
             c2 = make_divisible(c2 * gw, 8) if c2 != no else c2
-
-            # Experimental
-            # if i > 0 and args[0] != no:  # channel expansion factor
-            #     ex = 1 + gw  # exponential (default 2.0)
-            #     ch1 = 32  # ch[1]
-            #     e = math.log(c2 / ch1) / math.log(2)  # level 1-n
-            #     c2 = int(ch1 * ex ** e)
-            # if m != Focus:
-            #     c2 = make_divisible(c2, 8) if c2 != no else c2
-
             args = [c1, c2, *args[1:]]
             if m in [BottleneckCSP, C3]:
                 args.insert(2, n)
                 n = 1
-        elif m is nn.BatchNorm2d:
+        elif m is BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
             c2 = sum([ch[x if x < 0 else x + 1] for x in f])
@@ -273,6 +233,53 @@ if __name__ == '__main__':
     # Create model
     model = Model(opt.cfg).to(device)
     model.train()
+
+    # model_dict = {'nc': 3,
+    #               'depth_multiple': 1.0,
+    #               'width_multiple': 1.0,
+    #               'anchors': [
+    #                   [21, 18, 29, 24, 37, 29],
+    #                   [42, 37, 53, 48, 59, 38],
+    #                   [77, 56, 95, 86, 155, 116]
+    #               ],
+    #               'backbone': [
+    #                   [-1, 1, 'Conv', [32, 3, 1]],
+    #                   [-1, 1, 'Conv', [64, 3, 2]],
+    #                   [-1, 1, 'Bottleneck', [64]],
+    #                   [-1, 1, 'Conv', [128, 3, 2]],
+    #                   [-1, 2, 'Bottleneck', [128]],
+    #                   [-1, 1, 'Conv', [256, 3, 2]],
+    #                   [-1, 8, 'Bottleneck', [256]],
+    #                   [-1, 1, 'Conv', [512, 3, 2]],
+    #                   [-1, 8, 'Bottleneck', [512]],
+    #                   [-1, 1, 'Conv', [1024, 3, 2]],
+    #                   [-1, 4, 'Bottleneck', [1024]]
+    #               ],
+    #               'head': [
+    #                   [-1, 1, 'DilatedEncoder', [1024, 512, 4, [2, 4, 6, 8]]],
+    #                   [-1, 1, 'Bottleneck', [1024, False]],
+    #                   [-1, 1, 'Conv', [512, [1, 1]]],
+    #                   [-1, 1, 'Conv', [1024, 3, 1]],
+    #
+    #                   [-2, 1, 'Conv', [256, 1, 1]],
+    #                   [-1, 1, 'DilatedEncoder', [512, 256, 4, [2, 4, 6, 8]]],
+    #                   [-1, 1, 'nn.Upsample', ['None', 2, 'nearest']],
+    #                   [[-1, 8], 1, 'Concat', [1]],
+    #                   [-1, 1, 'Bottleneck', [512, False]],
+    #                   [-1, 1, 'Bottleneck', [512, False]],
+    #
+    #                   [-2, 1, 'Conv', [128, 1, 1]],
+    #                   [-1, 1, 'DilatedEncoder', [256, 128, 4, [2, 4, 6, 8]]],
+    #                   [-1, 1, 'nn.Upsample', ['None', 2, 'nearest']],
+    #                   [[-1, 6], 1, 'Concat', [1]],
+    #                   [-1, 1, 'Bottleneck', [256, False]],
+    #                   [-1, 2, 'Bottleneck', [256, False]],
+    #                   [[26, 20, 14], 1, 'Detect', ['nc', 'anchors']]
+    #               ],
+    #               'ch': 6}
+    #
+    # model, _ = parse_model(model_dict, [6])
+    # print(model)
 
     # Profile
     # img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)

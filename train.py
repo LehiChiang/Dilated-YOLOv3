@@ -312,14 +312,14 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
                 pbar.set_description(s)
 
                 # Plot
-                # if plots and ni < 3:
-                #     f = save_dir / f'train_batch{ni}.jpg'  # filename
-                #     Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
-                #     # if tb_writer:
-                #     #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
-                #     #     tb_writer.add_graph(model, imgs)  # add model to tensorboard
-                # elif plots and ni == 3 and wandb:
-                #     wandb.log({"Mosaics": [wandb.Image(str(x), caption=x.name) for x in save_dir.glob('train*.jpg')]})
+                if plots and ni < 3:
+                    f = save_dir / f'train_batch{ni}.jpg'  # filename
+                    Thread(target=plot_images, args=(imgs, targets, paths, f), daemon=True).start()
+                    # if tb_writer:
+                    #     tb_writer.add_image(f, result, dataformats='HWC', global_step=epoch)
+                    #     tb_writer.add_graph(model, imgs)  # add model to tensorboard
+                elif plots and ni == 3 and wandb:
+                    wandb.log({"Mosaics": [wandb.Image(str(x), caption=x.name) for x in save_dir.glob('train*.jpg')]})
 
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -407,7 +407,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
 
         # Test best.pt
         logger.info('%g epochs completed in %.3f hours.\n' % (epoch - start_epoch + 1, (time.time() - t0) / 3600))
-        if opt.data.endswith('coco.yaml') and nc == 80:  # if COCO
+        if opt.data.endswith('coco.yaml') and nc == 3:  # if COCO
             for conf, iou, save_json in ([0.25, 0.45, False], [0.001, 0.65, True]):  # speed, mAP tests
                 results, _, _ = test.test(opt.data,
                                           batch_size=total_batch_size,
@@ -436,7 +436,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=2, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=45, help='total batch size for all GPUs')
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
