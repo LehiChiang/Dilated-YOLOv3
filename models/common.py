@@ -400,11 +400,11 @@ class DilatedEncoder(nn.Module):
                                       self.encoder_channels,
                                       kernel_size=1)
         self.lateral_norm = get_norm(self.norm_type, self.encoder_channels)
-        self.fpn_conv = nn.Conv2d(self.encoder_channels,
-                                  self.encoder_channels,
-                                  kernel_size=3,
-                                  padding=1)
-        self.fpn_norm = get_norm(self.norm_type, self.encoder_channels)
+        # self.fpn_conv = nn.Conv2d(self.encoder_channels,
+        #                           self.encoder_channels,
+        #                           kernel_size=3,
+        #                           padding=1)
+        # self.fpn_norm = get_norm(self.norm_type, self.encoder_channels)
         encoder_blocks = []
         for i in range(self.num_residual_blocks):
             dilation = self.block_dilations[i]
@@ -421,8 +421,9 @@ class DilatedEncoder(nn.Module):
 
     def _init_weight(self):
         c2_xavier_fill(self.lateral_conv)
-        c2_xavier_fill(self.fpn_conv)
-        for m in [self.lateral_norm, self.fpn_norm]:
+        # c2_xavier_fill(self.fpn_conv)
+        # for m in [self.lateral_norm, self.fpn_norm]:
+        for m in [self.lateral_norm]:
             nn.init.constant_(m.weight, 1)
             nn.init.constant_(m.bias, 0)
         for m in self.dilated_encoder_blocks.modules():
@@ -437,7 +438,7 @@ class DilatedEncoder(nn.Module):
 
     def forward(self, feature: torch.Tensor) -> torch.Tensor:
         out = self.lateral_norm(self.lateral_conv(feature))
-        out = self.fpn_norm(self.fpn_conv(out))
+        # out = self.fpn_norm(self.fpn_conv(out))
         return self.dilated_encoder_blocks(out)
 
 
