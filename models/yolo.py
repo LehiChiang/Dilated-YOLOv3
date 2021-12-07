@@ -222,64 +222,51 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov3.yaml', help='model.yaml')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    opt = parser.parse_args()
-    opt.cfg = check_file(opt.cfg)  # check file
-    set_logging()
-    device = select_device(opt.device)
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--cfg', type=str, default='yolov3.yaml', help='model.yaml')
+    # parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    # opt = parser.parse_args()
+    # opt.cfg = check_file(opt.cfg)  # check file
+    # set_logging()
+    # device = select_device(opt.device)
 
     # Create model
-    model = Model(opt.cfg).to(device)
-    model.train()
+    # model = Model(opt.cfg).to(device)
+    # model.train()
 
-    # model_dict = {'nc': 3,
-    #               'depth_multiple': 1.0,
-    #               'width_multiple': 1.0,
-    #               'anchors': [
-    #                   [21, 18, 29, 24, 37, 29],
-    #                   [42, 37, 53, 48, 59, 38],
-    #                   [77, 56, 95, 86, 155, 116]
-    #               ],
-    #               'backbone': [
-    #                   [-1, 1, 'Conv', [32, 3, 1]],
-    #                   [-1, 1, 'Conv', [64, 3, 2]],
-    #                   [-1, 1, 'Bottleneck', [64]],
-    #                   [-1, 1, 'Conv', [128, 3, 2]],
-    #                   [-1, 2, 'Bottleneck', [128]],
-    #                   [-1, 1, 'Conv', [256, 3, 2]],
-    #                   [-1, 8, 'Bottleneck', [256]],
-    #                   [-1, 1, 'Conv', [512, 3, 2]],
-    #                   [-1, 8, 'Bottleneck', [512]],
-    #                   [-1, 1, 'Conv', [1024, 3, 2]],
-    #                   [-1, 4, 'Bottleneck', [1024]]
-    #               ],
-    #               'head': [
-    #                   [-1, 1, 'DilatedEncoder', [1024, 512, 4, [2, 4, 6, 8]]],
-    #                   [-1, 1, 'Bottleneck', [1024, False]],
-    #                   [-1, 1, 'Conv', [512, [1, 1]]],
-    #                   [-1, 1, 'Conv', [1024, 3, 1]],
-    #
-    #                   [-2, 1, 'Conv', [256, 1, 1]],
-    #                   [-1, 1, 'DilatedEncoder', [512, 256, 4, [2, 4, 6, 8]]],
-    #                   [-1, 1, 'nn.Upsample', ['None', 2, 'nearest']],
-    #                   [[-1, 8], 1, 'Concat', [1]],
-    #                   [-1, 1, 'Bottleneck', [512, False]],
-    #                   [-1, 1, 'Bottleneck', [512, False]],
-    #
-    #                   [-2, 1, 'Conv', [128, 1, 1]],
-    #                   [-1, 1, 'DilatedEncoder', [256, 128, 4, [2, 4, 6, 8]]],
-    #                   [-1, 1, 'nn.Upsample', ['None', 2, 'nearest']],
-    #                   [[-1, 6], 1, 'Concat', [1]],
-    #                   [-1, 1, 'Bottleneck', [256, False]],
-    #                   [-1, 2, 'Bottleneck', [256, False]],
-    #                   [[26, 20, 14], 1, 'Detect', ['nc', 'anchors']]
-    #               ],
-    #               'ch': 6}
-    #
-    # model, _ = parse_model(model_dict, [6])
-    # print(model)
+    model_dict = {'nc': 3,
+                  'depth_multiple': 1.0,
+                  'width_multiple': 1.0,
+                  'anchors': [
+                      [77, 56, 95, 86, 155, 116]
+                  ],
+                  'backbone': [
+                      [-1, 1, 'Conv', [32, 3, 1]],
+                      [-1, 1, 'Conv', [64, 3, 2]],
+                      [-1, 1, 'Bottleneck', [64]],
+                      [-1, 1, 'Conv', [128, 3, 2]],
+                      [-1, 2, 'Bottleneck', [128]],
+                      [-1, 1, 'Conv', [256, 3, 2]],
+                      [-1, 8, 'Bottleneck', [256]],
+                      [-1, 1, 'Conv', [512, 3, 2]],
+                      [-1, 8, 'Bottleneck', [512]],
+                      [-1, 1, 'Conv', [1024, 3, 2]],
+                      [-1, 4, 'Bottleneck', [1024]]
+                  ],
+                  'head': [
+                      [-1, 1, 'DilatedEncoder', [1024, 512, 4, [2, 4, 6, 8]]],
+                      [-1, 1, 'Bottleneck', [1024, False]],
+                      [-1, 1, 'Conv', [512, [1, 1]]],
+                      [-1, 1, 'Conv', [1024, 3, 1]],
+                      [-1, 1, 'Bottleneck', [512, False]],
+                      [-1, 1, 'Bottleneck', [512, False]],  # 16 (P5/32-large)
+
+                      [[16], 1, 'Detect', ['nc', 'anchors']]
+                  ],
+                  'ch': 6}
+
+    model, _ = parse_model(model_dict, [6])
+    print(model)
 
     # Profile
     # img = torch.rand(8 if torch.cuda.is_available() else 1, 3, 640, 640).to(device)

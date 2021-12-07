@@ -5,8 +5,8 @@ width_multiple: 1.0  # layer channel multiple
 
 # anchors
 anchors:
-  - [21,18, 29,24, 37,29]  # P3/8
-  - [42,37, 53,48, 59,38]  # P4/16
+#  - [21,18, 29,24, 37,29]  # P3/8
+#  - [42,37, 53,48, 59,38]  # P4/16
   - [77,56, 95,86, 155,116]  # P5/32
 
 # darknet53 backbone
@@ -31,21 +31,23 @@ head:
    [-1, 1, DilatedEncoder, [1024, 512, 4, [2, 4, 6, 8]]],
    [-1, 1, Bottleneck, [1024, False]],
    [-1, 1, Conv, [512, [1, 1]]],
-   [-1, 1, Conv, [1024, 3, 1]],  # 14 (P5/32-large)
-
-   [-2, 1, Conv, [256, 1, 1]],
-   [-1, 1, DilatedEncoder, [512, 256, 4, [2, 4, 6, 8]]],
-   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
-   [[-1, 8], 1, Concat, [1]],  # cat backbone P4
+   [-1, 1, Conv, [1024, 3, 1]],
    [-1, 1, Bottleneck, [512, False]],
-   [-1, 1, Bottleneck, [512, False]],  # 20 (P4/16-medium)
+   [-1, 1, Bottleneck, [512, False]], # 16 (P5/32-large)
 
-   [-2, 1, Conv, [128, 1, 1]],
-   [-1, 1, DilatedEncoder, [256, 128, 4, [2, 4, 6, 8]]],
-   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
-   [[-1, 6], 1, Concat, [1]],  # cat backbone P3
-   [-1, 1, Bottleneck, [256, False]],
-   [-1, 2, Bottleneck, [256, False]],  # 26 (P3/8-small)
+#   [-2, 1, Conv, [256, 1, 1]],
+#   [-1, 1, DilatedEncoder, [512, 256, 4, [2, 4, 6, 8]]],
+#   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
+#   [[-1, 8], 1, Concat, [1]],  # cat backbone P4
+#   [-1, 1, Bottleneck, [512, False]],
+#   [-1, 1, Bottleneck, [512, False]],  # 20 (P4/16-medium)
+#
+#   [-2, 1, Conv, [128, 1, 1]],
+#   [-1, 1, DilatedEncoder, [256, 128, 4, [2, 4, 6, 8]]],
+#   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
+#   [[-1, 6], 1, Concat, [1]],  # cat backbone P3
+#   [-1, 1, Bottleneck, [256, False]],
+#   [-1, 2, Bottleneck, [256, False]],  # 26 (P3/8-small)
 
-   [[26, 20, 14], 1, Detect, [nc, anchors]],   # Detect(P3, P4, P5)
+   [[16], 1, Detect, [nc, anchors]],   # Detect(P5)
   ]
