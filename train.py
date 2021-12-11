@@ -165,6 +165,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
     # DP mode
     if cuda and rank == -1 and torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
+        torch.backends.cudnn.enabled = False
 
     # SyncBatchNorm
     if opt.sync_bn and cuda and rank != -1:
