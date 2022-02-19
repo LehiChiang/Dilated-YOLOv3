@@ -6,11 +6,12 @@ from pathlib import Path
 
 import yaml
 
+from models.octconv import OctaveCBA, OctaveBottleneck
+
 sys.path.append('./')  # to run '$ python *.py' files in subdirectories
 logger = logging.getLogger(__name__)
 
 from models.common import *
-from models.experimental import MixConv2d, CrossConv
 from utils.autoanchor import check_anchor_order
 from utils.general import make_divisible, check_file, set_logging
 from utils.torch_utils import time_synchronized, fuse_conv_and_bn, model_info, scale_img, initialize_weights, \
@@ -188,13 +189,10 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
                 pass
 
         n = max(round(n * gd), 1) if n > 1 else n  # depth gain
-        if m in [Conv, Bottleneck, SPP, DWConv, MixConv2d, Focus, CrossConv, BottleneckCSP, C3, DilatedEncoder]:
+        if m in [OctaveCBA, Conv, Bottleneck, OctaveBottleneck, DilatedEncoder]:
             c1, c2 = ch[f], args[0]
             c2 = make_divisible(c2 * gw, 8) if c2 != no else c2
             args = [c1, c2, *args[1:]]
-            if m in [BottleneckCSP, C3]:
-                args.insert(2, n)
-                n = 1
         elif m is BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
@@ -241,17 +239,17 @@ if __name__ == '__main__':
                       [77, 56, 95, 86, 155, 116]
                   ],
                   'backbone': [
-                      [-1, 1, 'Conv', [32, 3, 1]],
-                      [-1, 1, 'Conv', [64, 3, 2]],
-                      [-1, 1, 'Bottleneck', [64]],
-                      [-1, 1, 'Conv', [128, 3, 2]],
-                      [-1, 2, 'Bottleneck', [128]],
-                      [-1, 1, 'Conv', [256, 3, 2]],
-                      [-1, 8, 'Bottleneck', [256]],
-                      [-1, 1, 'Conv', [512, 3, 2]],
-                      [-1, 8, 'Bottleneck', [512]],
-                      [-1, 1, 'Conv', [1024, 3, 2]],
-                      [-1, 4, 'Bottleneck', [1024]]
+                      [-1, 1, 'OctaveCBA', [32, 3, 1, 0, 0.5]],
+                      [-1, 1, 'OctaveCBA', [64, 3, 2]],
+                      [-1, 1, 'OctaveBottleneck', [64]],
+                      [-1, 1, 'OctaveCBA', [128, 3, 2]],
+                      [-1, 2, 'OctaveBottleneck', [128]],
+                      [-1, 1, 'OctaveCBA', [256, 3, 2]],
+                      [-1, 8, 'OctaveBottleneck', [256]],
+                      [-1, 1, 'OctaveCBA', [512, 3, 2]],
+                      [-1, 8, 'OctaveBottleneck', [512]],
+                      [-1, 1, 'OctaveCBA', [1024, 3, 2]],
+                      [-1, 4, 'OctaveBottleneck', [1024, 0.5, 0, True]]
                   ],
                   'head': [
                       [-1, 1, 'DilatedEncoder', [1024, 512, 4, [2, 4, 6, 8]]],
