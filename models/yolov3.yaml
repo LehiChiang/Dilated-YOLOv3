@@ -7,7 +7,7 @@ width_multiple: 1.0  # layer channel multiple
 anchors:
 #  - [21,18, 29,24, 37,29]  # P3/8
 #  - [42,37, 53,48, 59,38]  # P4/16
-  - [21,18, 29,24, 37,29]  # P5/32
+  - [21,18, 29,24, 37,29, 42,37, 53,48, 59,38, 77,56, 95,86, 155,116]  # P5/32
 
 # darknet53 backbone
 backbone:
@@ -28,7 +28,7 @@ backbone:
 # YOLOv3 head
 head:
   [
-   [-1, 1, DilatedEncoder, [1024, 512, 4, [2, 4, 6, 8]]],
+   [-1, 1, DilatedEncoder, [1024, 512, 4, [1, 2, 3, 4]]],
    [-1, 1, Bottleneck, [1024, False]],
    [-1, 1, Conv, [512, [1, 1]]],
    [-1, 1, Conv, [1024, 3, 1]],
